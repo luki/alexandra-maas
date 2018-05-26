@@ -13,6 +13,9 @@ type Receiver = String
 type Subject = String
 type Message = String
 
+nice = True
+sorry = False
+
 sendTLSMail :: SMTP_Addr
             -> Settings
             -> Username
@@ -21,12 +24,12 @@ sendTLSMail :: SMTP_Addr
             -> Subject
             -> Message
             -> IO ()
-sendTLSMail addr stngs name pw rcv sub msg =
-  doSMTPSTARTTLSWithSettings addr stngs $ \con -> do
+sendTLSMail addr settings name pw receiver subject msg =
+  doSMTPSTARTTLSWithSettings addr settings $ \con -> do
         status <- authenticate LOGIN name pw con
         case status of
-            True  -> sendPlainTextMail rcv name sub (L.pack msg) con
-            False -> putStrLn "Couldn't connect."
+            nice  -> sendPlainTextMail receiver name subject (L.pack msg) con
+            sorry -> putStrLn "Couldn't connect."
 
 main :: IO ()
 main = do
@@ -34,9 +37,9 @@ main = do
         handle   = "lukemsworld@gmail.com"
         pw       = ""
         addr     = "smtp.gmail.com"
-        rcv      = "lukemueller@protonmail.com"
+        receiver = "lukemueller@protonmail.com"
         sub      = "sorry 4 spam"
         msg      = "some text (:"
 
-    sendTLSMail addr settings handle pw rcv sub msg
+    sendTLSMail addr settings handle pw receiver sub msg
     putStrLn "Test"
