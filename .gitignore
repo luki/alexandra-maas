@@ -1,6 +1,6 @@
 
 # Created by https://www.gitignore.io/api/vim,macos,haskell
-
+/src/snippets.hs
 ### Haskell ###
 dist
 dist-*
@@ -64,4 +64,3 @@ tags
 
 
 # End of https://www.gitignore.io/api/vim,macos,haskell
-

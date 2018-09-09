@@ -1,51 +1,19 @@
 module Main where
 
-import qualified Data.Text.Lazy as L
-import qualified Data.Text      as T
+import qualified Data.Text.Lazy     as L
+import qualified Data.Text          as T
+import           Data.Text.Encoding           (decodeUtf8)
+import qualified Data.Text.IO       as TextIo
 
 import Network.HaskellNet.SMTP.SSL
 import Network.HaskellNet.SMTP     (authenticate, sendPlainTextMail)
 import Network.HaskellNet.Auth     (AuthType(LOGIN, PLAIN))
 
-import qualified Data.Bson as B
-import Data.Bson         (Field( (:=) ))
-import Data.Bson.Mapping
+import           Network.HaskellNet.IMAP.SSL         (connectIMAPSSL)
+import qualified Network.HaskellNet.IMAP     as IMAP
 
-import Control.Applicative (pure)
-
-data Subscriber = Subscriber
-     { firstName :: String
-     , lastName :: String
-     , mailAddress :: String
-     } deriving (Show, Eq)
-
-instance Bson Subscriber where
-    fromBson bsonData =
-        do firstName <- B.lookup (T.pack "firstName") bsonData
-           lastName <- B.lookup (T.pack "lastName") bsonData
-           addr <- B.lookup (T.pack "mailAddress") bsonData
-           pure $ Subscriber firstName lastName addr
-    toBson (Subscriber firstName lastName addr) =
-        [(T.pack "firstName") := (B.String . T.pack $ firstName)
-        ,(T.pack "lastName") := (B.String . T.pack $ lastName)
-        ,(T.pack "mailAddress") := (B.String . T.pack $ addr)
-        ]
-
-data Subscription = Subscription
-    { subscriber :: Subscriber
-    , listId :: String
-    } deriving (Eq, Show)
-
-instance Bson Subscription where
-    fromBson bsonData =
-        do listId <- (B.lookup (T.pack "listId") bsonData)
-           subscriber <- B.lookup (T.pack "subscriber") bsonData
-           finalSub <- (fromBson subscriber)
-           pure $ Subscription finalSub listId
-    toBson (Subscription sub listId) =
-        [(T.pack "subscriber") := (B.Doc $ toBson sub)
-        ,(T.pack "listId") := (B.String . T.pack $ listId)
-        ]
+import Data.ByteString (ByteString)
+import Control.Monad   (when)
 
 type SMTP_Addr = String
 type Username = String
@@ -63,28 +31,51 @@ sendTLSMail :: SMTP_Addr
             -> Message
             -> IO ()
 sendTLSMail addr settings name pw receiver subject msg =
-  doSMTPSTARTTLSWithSettings addr settings $ \con ->
-        do status <- authenticate LOGIN name pw con
-           case status of
-                True  -> sendPlainTextMail receiver name subject (L.pack msg) con
-                False -> putStrLn "Couldn't connect."
+  doSMTPSTARTTLSWithSettings addr settings $
+      \con -> do status <- authenticate LOGIN name pw con
+                 case status of
+                     True  -> sendPlainTextMail receiver name subject (L.pack msg) con
+                     False -> putStrLn "Couldn't connect."
+
+ioByteStringsToText :: [IO ByteString] -> IO [T.Text]
+ioByteStringsToText [x] = do
+    text <- x
+    return [decodeUtf8 text]
+ioByteStringsToText (x:xs) = do
+    textList <- ioByteStringsToText xs
+    text <- x
+    return [decodeUtf8 text]
+
+-- printList :: (Show a, Eq a) => [a] -> IO ()
+-- printList (x:xs) = do
+--     putStrLn . show $ x
+--     when (xs /= []) $ (printList xs)
+
+-- Try to generalize (without bytestring)
+printList :: [IO ByteString] -> IO ()
+printList (x:xs) = do
+    putStrLn . show . decodeUtf8 =<< x
+    when (null xs) $ printList xs
 
 main :: IO ()
 main = do
-    -- Test BSON
-    let sub = Subscription
-                  (Subscriber "Luke" "Mueller" "lukasamueller@icloud.com")
-                  "0"
-
-    (putStrLn . show) =<< (fromBson (toBson sub) :: IO Subscription)
-
     let settings = Settings 587 500 True True
-        handle   = "lukemsworld@gmail.com"
+        handle   = ""
         pw       = ""
-        addr     = "" --"smtp.gmail.com"
-        receiver = "lukemueller@protonmail.com"
+        addr     = ""
+        receiver = ""
         sub      = "sorry 4 spam"
         msg      = "some text (:"
 
-    sendTLSMail addr settings handle pw receiver sub msg
+    imapCon <- connectIMAPSSL ""
+    IMAP.authenticate imapCon IMAP.PLAIN "" ""
+    IMAP.select imapCon "Inbox"
+    uids <- IMAP.search imapCon [IMAP.NOTs $ IMAP.FLAG IMAP.Seen]
+
+    let ioByteStrings = map (IMAP.fetch imapCon) uids -- [IO ByteString]
+    printList ioByteStrings
+
+    putStrLn . show $ uids
+
+    -- sendTLSMail addr settings handle pw receiver sub msg
     putStrLn "Test"
